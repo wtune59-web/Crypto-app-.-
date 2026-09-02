@@ -1,0 +1,151 @@
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+import requests
+from xgboost import XGBClassifier
+
+# ÅÚÏÇÏÇÊ ÇáÕİÍÉ ÇáÃÓÇÓíÉ áÊßæä æÇÓÚÉ æÇÍÊÑÇİíÉ
+st.set_page_config(
+    page_title="Crypto AI Intelligence | ãäÕÉ ÊæŞÚÇÊ ÇáÚãáÇÊ",
+    page_icon="??",
+    layout="wide"
+)
+
+# ÊÎÕíÕ ãÙåÑ ÇáÊØÈíŞ ÈÊäÓíŞ CSS ÈÓíØ æÌãíá
+st.markdown("""
+    <style>
+    .main-header {
+        font-size: 2.2rem;
+        color: #1E3A8A;
+        font-weight: 700;
+    }
+    .sub-text {
+        color: #4B5563;
+        font-size: 1.1rem;
+    }
+    .metric-card {
+        background-color: #F3F4F6;
+        padding: 15px;
+        border-radius: 10px;
+        border-left: 5px solid #3B82F6;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# 1. ÔÑíØ ÌÇäÈí (Sidebar) ãÊØæÑ íÊÖãä ÇáÅÚÏÇÏÇÊ æÑæÇÈØ ÇáÅÍÇáÉ
+st.sidebar.image("https://img.icons8.com/fluency/96/artificial-intelligence.png", width=80)
+st.sidebar.title("áæÍÉ ÇáÊÍßã ÇáĞßíÉ")
+st.sidebar.markdown("---")
+
+crypto_symbol = st.sidebar.selectbox(
+    "?? ÇÎÊÑ ÇáÚãáÉ ÇáÑŞãíÉ:",
+    ["BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "BNB-USD"]
+)
+
+st.sidebar.markdown("---")
+st.sidebar.header("?? ÇäÖã Åáì ãäÕÇÊ ÇáÊÏÇæá")
+st.sidebar.markdown("ÇÈÏÃ ÇáÊÏÇæá ÚÈÑ ÃİÖá ÇáãäÕÇÊ ÇáÚÇáãíÉ ÈÇÓÊÎÏÇã ÑæÇÈØäÇ:")
+
+# ÑæÇÈØ ÇáÅÍÇáÉ (ÇÓÊÈÏá ÇáÑæÇÈØ ÃÏäÇå ÈÑæÇÈØ ÇáÅÍÇáÉ ÇáÎÇÕÉ Èß Affiliate Links)
+st.sidebar.markdown("[?? ÓÌá İí Binance æÇÍÕá Úáì ÎÕã](https://accounts.binance.com/register?ref=YOUR_REF_ID)")
+st.sidebar.sidebar_link = st.sidebar.markdown("[?? ÓÌá İí Bybit áÊÏÇæá ÇáÚãáÇÊ](https://www.bybit.com/invite?ref=YOUR_REF_ID)")
+
+st.sidebar.markdown("---")
+st.sidebar.caption("Êã ÊØæíÑ åĞÇ ÇáÊØÈíŞ ßÃÏÇÉ ÊÍáíá ÇÓÊÑÔÇÏíÉ ãÏÚæãÉ ÈÇáĞßÇÁ ÇáÇÕØäÇÚí.")
+
+# 2. ÇáæÇÌåÉ ÇáÑÆíÓíÉ ááÊØÈíŞ
+st.markdown('<p class="main-header">?? ãäÕÉ ÊÍáíá æÊæŞÚ ÇáÚãáÇÊ ÇáÑŞãíÉ ÈÇáĞßÇÁ ÇáÇÕØäÇÚí</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-text">äÙÇã íÚÊãÏ Úáì ÎæÇÑÒãíÇÊ XGBoost¡ ÇáãÄÔÑÇÊ ÇáİäíÉ¡ æãÄÔÑ ÇáÎæİ æÇáÌÔÚ áŞÑÇÁÉ ÇÊÌÇå ÇáÓæŞ.</p>', unsafe_allow_html=True)
+st.markdown("---")
+
+# ÏÇáÉ ÌáÈ ãÄÔÑ ÇáÎæİ æÇáÌÔÚ
+@st.cache_data(ttl=3600)
+def get_fear_and_greed():
+    try:
+        url = "https://api.alternative.me/fng/?limit=0"
+        response = requests.get(url).json()
+        df = pd.DataFrame(response['data'])
+        df['value'] = df['value'].astype(int)
+        df['Date'] = pd.to_datetime(df['timestamp'].astype(int), unit='s').dt.strftime('%Y-%m-%d')
+        return df[['Date', 'value']].rename(columns={'value': 'Fear_Greed_Index'})
+    except:
+        return None
+
+# ÌáÈ ÈíÇäÇÊ ÇáÚãáÉ æÇáãÄÔÑÇÊ
+@st.cache_data(ttl=1800)
+def load_and_process_data(symbol):
+    data = yf.download(symbol, period='3y', progress=False)
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = data.columns.get_level_values(0)
+    
+    data = data.reset_index()
+    data['Date'] = data['Date'].dt.strftime('%Y-%m-%d')
+    
+    fng_df = get_fear_and_greed()
+    if fng_df is not None:
+        data = pd.merge(data, fng_df, on='Date', how='inner')
+        
+    data.set_index('Date', inplace=True)
+    
+    # ÍÓÇÈ ÇáãÄÔÑÇÊ
+    data['Price_Change'] = data['Close'].pct_change()
+    data['Volume_Change'] = data['Volume'].pct_change()
+    data['SMA_10'] = data['Close'].rolling(10).mean()
+    data['SMA_30'] = data['Close'].rolling(30).mean()
+    data['SMA_Ratio'] = data['SMA_10'] / data['SMA_30']
+    
+    delta = data['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    rs = gain / loss
+    data['RSI'] = 100 - (100 / (1 + rs))
+    
+    return data
+
+# ãÚÇáÌÉ ÇáÊÏÑíÈ æÊæáíÏ ÇáäÊÇÆÌ
+with st.spinner(f"ÌÇÑí ÌáÈ æÊÍáíá ÈíÇäÇÊ {crypto_symbol} ÈæÇÓØÉ ÇáĞßÇÁ ÇáÇÕØäÇÚí..."):
+    data = load_and_process_data(crypto_symbol)
+    features = ['Price_Change', 'Volume_Change', 'SMA_Ratio', 'RSI', 'Fear_Greed_Index']
+
+    today_features = data[features].iloc[-1:]
+    data['Target'] = (data['Close'].shift(-1) > data['Close']).astype(int)
+    clean_data = data.dropna()
+
+    X = clean_data[features]
+    y = clean_data['Target']
+
+    model = XGBClassifier(n_estimators=100, max_depth=3, learning_rate=0.03, random_state=42)
+    model.fit(X, y)
+
+    prediction = model.predict(today_features)[0]
+    probabilities = model.predict_proba(today_features)[0]
+
+# --- ÚÑÖ ÇáäÊÇÆÌ İí ßÑæÊ ÇÍÊÑÇİíÉ (Metrics) ---
+current_price = data['Close'].iloc[-1]
+current_fng = data['Fear_Greed_Index'].iloc[-1] if 'Fear_Greed_Index' in data.columns else "N/A"
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.metric(label="?? ÇáÓÚÑ ÇáÍÇáí", value=f"${current_price:,.2f}")
+
+with col2:
+    st.metric(label="?? ãÄÔÑ ÇáÎæİ æÇáÌÔÚ", value=f"{current_fng} / 100")
+
+with col3:
+    if prediction == 1:
+        st.metric(label="?? ÊæŞÚ ÍÑßÉ ÇáÛÏ", value="?? ÇÑÊİÇÚ ãÊæŞÚ", delta=f"ËŞÉ ÇáäãæĞÌ: {probabilities[1]*100:.1f}%")
+    else:
+        st.metric(label="?? ÊæŞÚ ÍÑßÉ ÇáÛÏ", value="?? ÇäÎİÇÖ ãÊæŞÚ", delta=f"ËŞÉ ÇáäãæĞÌ: {probabilities[0]*100:.1f}%", delta_color="inverse")
+
+st.markdown("---")
+
+# --- ÇáÑÓæã ÇáÈíÇäíÉ ÇáÊİÇÚáíÉ ---
+st.subheader(f"?? ÇáÊÍáíá Çáİäí áÜ {crypto_symbol}")
+tab1, tab2 = st.tabs(["?? ÍÑßÉ ÇáÓÚÑ ÇáÊÇÑíÎíÉ", "?? ãÄÔÑ ÇáŞæÉ ÇáäÓÈíÉ (RSI)"])
+
+with tab1:
+    st.line_chart(data['Close'], use_container_width=True)
+
+with tab2:
+    st.line_chart(data['RSI'], use_container_width=True)
